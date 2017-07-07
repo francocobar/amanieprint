@@ -12,7 +12,7 @@
 */
 
 Route::get('/print-sales-report/{period}/{spesific?}/{branch?}', 'ReportController@printSalesReport');
-Route::get('/test2/test2', 'PrintController@printTest2');
+Route::get('/test2', 'PrintController@printTest2');
 Route::get('/{invoice_id}', 'PrintController@printInvoice');
 Route::get('/', function(){
     return "oke2";

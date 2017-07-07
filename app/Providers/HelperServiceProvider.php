@@ -97,10 +97,16 @@ class HelperServiceProvider extends ServiceProvider
          return str_replace('.', '', $masked_money);
      }
 
-     static function inaDate($db_date)
+     static function inaDate($db_date, $type=1)
      {
-         $exploded = explode('-', $db_date);
+         if($type==1) {//date only
+             $exploded = explode('-', $db_date);
 
-         return $exploded[2].' '.HelperService::monthName($exploded[1]).' '.$exploded[0];
+             return $exploded[2].' '.HelperService::monthName($exploded[1]).' '.$exploded[0];
+         }
+
+         //datetime
+         return HelperService::inaDate($db_date->toDateString()).' '.$db_date->toTimeString();
+
      }
 }

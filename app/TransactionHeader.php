@@ -17,4 +17,17 @@ class TransactionHeader extends Model
     {
         return $this->hasOne('App\User', 'id', 'cashier2_user_id');
     }
+
+    function paymentStatus()
+    {
+        if(!$this->is_debt) {
+            return "Lunas";
+        }
+        else {
+            if($this->last_payment_date == null) {
+                return "Cicilan Belum Lunas";
+            }
+            return "Cicilan Sudah Lunas";
+        }
+    }
 }

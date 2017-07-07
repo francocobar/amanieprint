@@ -12,35 +12,21 @@ use App\TransactionHeader;
 use App\TransactionDetail;
 use App\Branch;
 use App\Member;
+use App\NextPayment;
 use HelperService;
+use \Carbon\Carbon;
 
 class PrintController extends Controller
 {
     function printInvoice($invoice_id)
     {
-        // return "oke";
         $invoice_id = str_replace('-','/', $invoice_id);
         $header = TransactionHeader::where('invoice_id', $invoice_id)->first();
 
+        // dd($header->paymentStatus());
         $details = TransactionDetail::with(['itemInfo'])->where('header_id', $header->id)->get();
-        $date_time = $header->created_at->day.'/'.$header->created_at->month.'/'.$header->created_at->year.' '.
-                        $header->created_at->hour.':'.$header->created_at->minute;
-        // dd($date_time);
+        $date_time = HelperService::inaDate($header->created_at,2);
 
-        // dd($details);
-        // return "";
-        // $array_items = [];
-        // $array_items[] = array(
-        //     'item_name' => 'Item 1',
-        //     'item_qty' => 9,
-        //     'item_total_price' => 90000
-        // );
-        //
-        // $array_items[] = array(
-        //     'item_name' => 'Item 1234567891012345678912345678',
-        //     'item_qty' => 90,
-        //     'item_total_price' => 900000
-        // );
         $connector = null;
         if(env('OS')=='windows') {
             $connector = new WindowsPrintConnector(env('PRINTER_NAME'));
@@ -58,29 +44,38 @@ class PrintController extends Controller
         $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
         $printer -> text('RUMAH CANTIQUE AMANIE'."\n".'SALON & SPA MUSLIMAH'."\n");
 
-
         $printer -> selectPrintMode(Printer::MODE_FONT_B);
         $branch = Branch::find($header->branch_id);
         $printer -> setUnderline(0);
         $printer -> text('Cabang '.$branch->branch_name.': '.$branch->address."\n");
         $printer -> text($branch->phone."\n\n");
+        //
+        // $printer -> setEmphasis(false);
 
-        $printer -> setEmphasis(false);
+        $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
+        $printer -> text($header->invoice_id.'  #'.$header->id."\n");
+        $printer -> selectPrintMode(Printer::MODE_FONT_B);
         $printer -> setJustification(Printer::JUSTIFY_LEFT);
-        $printer -> text($header->invoice_id.'  '.$date_time."\n");
+        $printer -> text('Waktu : '.$date_time."\n");
         $cashier = 'Kasir : #'.$header->cashier->id.' '.$header->cashier->first_name;
         $printer -> text($cashier."\n");
+
         $member = 'Member : ';
         if($header->member_id!=null) {
             $member .= Member::where('member_id',$header->member_id)->first()->full_name.' '.$header->member_id;
         }
         else {
-            $member .= '-';
+            if($header->customer_name) {
+                $member = 'Customer : '. $header->customer_name.' ('.$header->customer_phone.')';
+            }
+            else {
+                $member .= '-';
+            }
         }
         $printer -> text($member."\n\n");
         $max_char_name = 20;
         foreach ($details as $detail) {
-            $nama_item = $detail->itemInfo->item_name;
+            $nama_item = $detail->item_id !='c' ? $detail->itemInfo->item_name : $detail->custom_name;
             $sisa_nama_item = '';
             if(strlen($nama_item) > $max_char_name) {
                 $old_nama_item = $nama_item;
@@ -123,53 +118,79 @@ class PrintController extends Controller
             $printer -> text("\n".$total_akhir_3."\n");
         }
 
+        if($header->debt > 0) {
+            $dp = number_format(intval($header->paid_value),0,",",".");
+            $dp_2 = str_pad('DP',19,' ',STR_PAD_LEFT).str_pad($dp,20,' ',STR_PAD_LEFT);
+            $printer -> text("\n".$dp_2);
+        }
+
         $payment_type = array(
             1 => 'Tunai',
             2 => 'Kredit',
             3 => 'Credit Card',
             4 => 'Debit Card'
         );
-        $printer -> text("\n");
         $bayar = $payment_type[$header->payment_type].' BAYAR';
 
         $bayar_2 = number_format(intval($header->total_paid),0,",",".");
         $bayar = str_pad($bayar,19,' ',STR_PAD_LEFT).str_pad($bayar_2,20,' ',STR_PAD_LEFT);
-        $printer -> text($bayar."\n");
+        $printer -> text("\n".$bayar);
         if($header->payment_type == 1) {
             if($header->change > 0) {
                 $change = number_format(intval($header->change),0,",",".");
                 $change_2 = str_pad('KEMBALIAN',19,' ',STR_PAD_LEFT).str_pad($change,20,' ',STR_PAD_LEFT);
-                $printer -> text($change_2."\n");
+                $printer -> text("\n".$change_2);
             }
         }
-        else if($header->payment_type == 2) {
-            if($header->is_debt && $header->debt > 0) {
-                $debt = number_format(intval($header->debt),0,",",".");
-                $debt_2 = str_pad('HUTANG',19,' ',STR_PAD_LEFT).str_pad($debt,20,' ',STR_PAD_LEFT);
-                $printer -> text($debt_2."\n");
-            }
-            if($header->payment2_date != null) {
-                $printer -> text("\n");
-                $payment2_date = HelperService::createDateTimeObj($header->payment2_date);
-                $date_time2= $payment2_date->day.'/'.$payment2_date->month.'/'.$payment2_date->year.' '.
-                                $payment2_date->hour.':'.$payment2_date->minute;
-                $printer -> text('Pelunasan : '.$date_time2."\n");
-                $cashier = 'Kasir : #'.$header->cashier2->id.' '.$header->cashier2->first_name;
-                $printer -> text($cashier."\n");
+        if($header->debt > 0) {
+            $debt = number_format(intval($header->debt),0,",",".");
+            $debt_2 = str_pad('BELUM BAYAR',19,' ',STR_PAD_LEFT).str_pad($debt,20,' ',STR_PAD_LEFT);
+            $printer -> text("\n".$debt_2);
+        }
 
-                $total_paid2 =  number_format(intval($header->total_paid2),0,",",".");
-                $second_payment =  str_pad('PEMABAYARAN KE-2',19,' ',STR_PAD_LEFT).str_pad($total_paid2, 20,' ',STR_PAD_LEFT);
-                $printer -> text("\n".$second_payment."\n");
-                if($header->change2 > 0) {
-                    $change = number_format(intval($header->change2),0,",",".");
-                    $change_2 = str_pad('KEMBALIAN',19,' ',STR_PAD_LEFT).str_pad($change,20,' ',STR_PAD_LEFT);
-                    $printer -> text($change_2."\n");
-                }
+        $next_payments = NextPayment::where('header_id',$header->id)->get();
+        $no_payment=2;
+        foreach($next_payments as $next_payment)
+        {
+            $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
+            $print_text ="\nPEMBAYARAN KE-".$no_payment;
+            $printer -> text("\n".$print_text);
+            $printer -> selectPrintMode(Printer::MODE_FONT_B);
+            $print_text = 'Waktu : '.HelperService::inaDate($next_payment->created_at,2)."\n";
+            $print_text .= 'Kasir : #'.$next_payment->cashier->id.' '.$next_payment->cashier->first_name."\n";
+            $value = number_format(intval($next_payment->paid_value),0,",",".");
+            $value = str_pad('NILAI BAYAR',19,' ',STR_PAD_LEFT).str_pad($value,20,' ',STR_PAD_LEFT);
+            $print_text .= "\n".$value."\n";
+            $value = number_format(intval($next_payment->total_paid),0,",",".");
+            $bayar = $payment_type[$next_payment->payment_type].' BAYAR';
+            $value = str_pad($bayar,19,' ',STR_PAD_LEFT).str_pad($value,20,' ',STR_PAD_LEFT);
+            $print_text .= $value;
+            if($next_payment->change>0) {
+                $value = number_format(intval($next_payment->change),0,",",".");
+                $value = str_pad('KEMBALIAN',19,' ',STR_PAD_LEFT).str_pad($value,20,' ',STR_PAD_LEFT);
+                $print_text .= "\n".$value;
             }
+            if($next_payment->debt_after>0) {
+                $value = number_format(intval($next_payment->debt_after),0,",",".");
+                $value = str_pad('BELUM BAYAR',19,' ',STR_PAD_LEFT).str_pad($value,20,' ',STR_PAD_LEFT);
+                $print_text .= "\n".$value;
+            }
+            $printer -> text("\n".$print_text);
+            $no_payment++;
+        }
+
+        $status_payment = $header->paymentStatus();
+        if($status_payment=='Lunas') {
+            $print_text = "\nStatus Pembayaran: Lunas";
+            $printer -> text("\n".$print_text."\n");
+        }
+        else {
+            $print_text = "\nStatus Pembayaran per \n".HelperService::inaDate(Carbon::now(),2)."\n".$header->paymentStatus();
+            $printer -> text("\n".$print_text."\n");
         }
 
         $printer -> selectPrintMode(169);
-        $printer -> text("\n*** TERIMA KASIH ***\n");
+        $printer -> text("\n*** TERIMA KASIH ***\n\n");
         $printer -> cut();
         $printer -> pulse();
         $printer -> close();
@@ -182,62 +203,29 @@ class PrintController extends Controller
 
     function printTest2()
     {
-        $connector = new CupsPrintConnector("Epson-9-Pin");
-        $printer = new Printer($connector);
-        $printer -> setJustification(Printer::JUSTIFY_LEFT);
-
-        $printer -> setJustification(Printer::JUSTIFY_CENTER);
-        // return Printer::MODE_EMPHASIZED;
-        // ,
-   // Printer::MODE_EMPHASIZED,
-   // Printer::MODE_DOUBLE_HEIGHT,
-   // Printer::MODE_DOUBLE_WIDTH,
-   // Printer::MODE_UNDERLINE);
-
-   $modes = array(
-    Printer::MODE_FONT_B,
-    Printer::MODE_EMPHASIZED,
-    Printer::MODE_DOUBLE_HEIGHT,
-    Printer::MODE_DOUBLE_WIDTH,
-    Printer::MODE_UNDERLINE);
-for ($i = 0; $i < pow(2, count($modes)); $i++) {
-    $bits = str_pad(decbin($i), count($modes), "0", STR_PAD_LEFT);
-    $mode = 0;
-    for ($j = 0; $j < strlen($bits); $j++) {
-        if (substr($bits, $j, 1) == "1") {
-            $mode |= $modes[$j];
+        $connector = null;
+        if(env('OS')=='windows') {
+            $connector = new WindowsPrintConnector(env('PRINTER_NAME'));
         }
-    }
-    $printer -> selectPrintMode($mode);
-    // $printer -> text($mode." | ");
-}
-    // $printer -> feed();
-    // $printer -> cut();
-    // $printer -> pulse();
-    // $printer -> close();
-   return "";
+        else {
+            $connector = new CupsPrintConnector(env('PRINTER_NAME'));
+        }
 
-        $printer -> selectPrintMode(Printer::MODE_FONT_B);
-        $printer -> text("RUMAH CANTIQUE AMANIE\n");
-        $printer -> text("SALON DAN SPA MUSLIMAH\n");
-             $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
-             $printer -> text("RUMAH CANTIQUE AMANIE\n");
-             $printer -> text("SALON DAN SPA MUSLIMAH\n");
-                  $printer -> selectPrintMode(Printer::MODE_DOUBLE_HEIGHT);
-                  $printer -> text("RUMAH CANTIQUE AMANIE\n");
-                  $printer -> text("SALON DAN SPA MUSLIMAH\n");
-                       $printer -> selectPrintMode(Printer::MODE_DOUBLE_WIDTH);
-                       $printer -> text("RUMAH CANTIQUE AMANIE\n");
-                       $printer -> text("SALON DAN SPA MUSLIMAH\n");
-                            $printer -> selectPrintMode(Printer::MODE_UNDERLINE);
-                            $printer -> text("RUMAH CANTIQUE AMANIE\n");
-                            $printer -> text("SALON DAN SPA MUSLIMAH\n");
-        $printer -> feed();
+        $printer = new Printer($connector);
+        $printer -> setEmphasis(true);
+        $printer -> setUnderline(1);
+        $printer -> setJustification(Printer::JUSTIFY_CENTER);
+
+        // $img = EscposImage::load("tux.png");
+        // $printer -> graphics($img);
+        $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
+        $printer -> text('RUMAH CANTIQUE AMANIE'."\n".'SALON & SPA MUSLIMAH'."\n");$printer -> selectPrintMode(169);
+        $printer -> text("\n*** TERIMA KASIH ***\n");
         $printer -> cut();
         $printer -> pulse();
         $printer -> close();
-        return phpinfo();
     }
+
 }
 
 class item
