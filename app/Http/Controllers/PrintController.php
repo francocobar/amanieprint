@@ -28,12 +28,7 @@ class PrintController extends Controller
         $date_time = HelperService::inaDate($header->created_at,2);
 
         $connector = null;
-        if(env('OS')=='windows') {
-            $connector = new WindowsPrintConnector(env('PRINTER_NAME'));
-        }
-        else {
-            $connector = new CupsPrintConnector(env('PRINTER_NAME'));
-        }
+        $connector = new WindowsPrintConnector(env('PRINTER_NAME'));
         $printer = new Printer($connector);
         $printer -> setEmphasis(true);
         $printer -> setUnderline(1);
@@ -194,22 +189,23 @@ class PrintController extends Controller
         $printer -> cut();
         $printer -> pulse();
         $printer -> close();
-        if(request()->redirect_back==1)
-            return redirect(env('URL_SERVER').'cashier');
-        else if(request()->redirect_back==2)
-            return redirect(env('URL_SERVER').'search-invoices?invoice='.$invoice_id);
+        if(request()->redirect_back==1) {
+            $branch = '';
+            if(request()->b) {
+                $branch = '?branch='.request()->b;
+            }
+            return redirect(env('URL_SERVER').'cashier-v2'.$branch);
+        }
 
+        else if(request()->redirect_back==2) {
+            return redirect(env('URL_SERVER').'search-invoices?invoice='.$invoice_id);
+        }
     }
 
     function printTest2()
     {
         $connector = null;
-        if(env('OS')=='windows') {
-            $connector = new WindowsPrintConnector(env('PRINTER_NAME'));
-        }
-        else {
-            $connector = new CupsPrintConnector(env('PRINTER_NAME'));
-        }
+        $connector = new WindowsPrintConnector('EPSONPOS');
 
         $printer = new Printer($connector);
         $printer -> setEmphasis(true);
