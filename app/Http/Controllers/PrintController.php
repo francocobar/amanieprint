@@ -70,7 +70,7 @@ class PrintController extends Controller
         $printer -> text($member."\n\n");
         $max_char_name = 20;
         foreach ($details as $detail) {
-            $nama_item = $detail->item_id !='c' ? $detail->itemInfo->item_name : $detail->custom_name;
+            $nama_item =$detail->custom_name ? $detail->custom_name : $detail->itemInfo->item_name;
             $sisa_nama_item = '';
             if(strlen($nama_item) > $max_char_name) {
                 $old_nama_item = $nama_item;
