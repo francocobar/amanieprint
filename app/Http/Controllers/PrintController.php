@@ -20,6 +20,7 @@ class PrintController extends Controller
 {
     function printInvoice($invoice_id)
     {
+        $branch_already_get = [];
         $invoice_id = str_replace('-','/', $invoice_id);
         $header = TransactionHeader::where('invoice_id', $invoice_id)->first();
 
@@ -36,13 +37,20 @@ class PrintController extends Controller
 
         // $img = EscposImage::load("tux.png");
         // $printer -> graphics($img);
+        $branch = Branch::find($header->branch_id);
         $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
-        $printer -> text('RUMAH CANTIQUE AMANIE'."\n".'SALON & SPA MUSLIMAH'."\n");
+        if($branch->branch_name=='Galeri') {
+            $printer -> text('PT AMANIE INTERNASIONAL'."\n".'RUMAH CANTIQUE AMANIE'."\n".'GALERI PENGANTIN & HIJAB SALON'."\n");
+        }
+        else {
+            $printer -> text('RUMAH CANTIQUE AMANIE'."\n".'SALON & SPA MUSLIMAH'."\n");
+        }
 
         $printer -> selectPrintMode(Printer::MODE_FONT_B);
-        $branch = Branch::find($header->branch_id);
+
         $printer -> setUnderline(0);
         $printer -> text('Cabang '.$branch->branch_name.': '.$branch->address."\n");
+        $branch_already_get[$header->branch_id] = $branch->branch_name;
         $printer -> text($branch->phone."\n\n");
         //
         // $printer -> setEmphasis(false);
@@ -61,7 +69,10 @@ class PrintController extends Controller
         }
         else {
             if($header->customer_name) {
-                $member = 'Customer : '. $header->customer_name.' ('.$header->customer_phone.')';
+                $member = 'Customer : '. $header->customer_name;
+                if($header->customer_phone) {
+                    $member = $member.' ('.$header->customer_phone.')';
+                }
             }
             else {
                 $member .= '-';
@@ -87,25 +98,35 @@ class PrintController extends Controller
             }
             $harga_satuan = '@'.number_format(intval($detail->item_price),0,",",".");;
             $printer -> text($harga_satuan."\n");
+            if($detail->item_discount_fixed_value > 0) {
+                $nama_item_fix = str_pad('',$max_char_name-4,' ');
+                $item_discount_value = number_format(intval($detail->item_discount_fixed_value),0,",",".");
+                $input_val = '';
+                if($detail->item_discount_type == 1) {
+                    $input_val = ' '.intval($detail->item_discount_input).'%';
+                }
+                $text_print = $nama_item_fix.str_pad('^disc.'.$input_val,11,' ').str_pad('-'.$item_discount_value,12,' ',STR_PAD_LEFT);
+                $printer -> text($text_print."\n\n");
+            }
         }
-        $grand_total_item_price = number_format(intval($header->grand_total_item_price),0,",",".");
-        $total = str_pad('TOTAL',19,' ',STR_PAD_LEFT).str_pad($grand_total_item_price.' [+]',20,' ',STR_PAD_LEFT);
+        $grand_total_item_price = number_format(intval($header->grand_total_item_price-$header->total_item_discount),0,",",".");
+        $total = str_pad('TOTAL',19,' ',STR_PAD_LEFT).str_pad($grand_total_item_price,20,' ',STR_PAD_LEFT);
         $printer -> text("\n".$total."\n");
 
-        $potongan_total = $header->total_item_discount+$header->discount_total_fixed_value;
+        $potongan_total = $header->discount_total_fixed_value;
         if($potongan_total>0) {
             $potongan_total_2 = number_format(intval($potongan_total),0,",",".");
-            $potongan = str_pad('POTONGAN',19,' ',STR_PAD_LEFT).str_pad($potongan_total_2.' [-]',20,' ',STR_PAD_LEFT);
+            $potongan = str_pad('POTONGAN',18,' ',STR_PAD_LEFT).str_pad('-'.$potongan_total_2,21,' ',STR_PAD_LEFT);
             $printer -> text($potongan."\n");
         }
 
         if($header->others>0) {
             $lain_lain = number_format(intval($header->others),0,",",".");
-            $others = str_pad('LAIN-LAIN',19,' ',STR_PAD_LEFT).str_pad($lain_lain.' [+]',20,' ',STR_PAD_LEFT);
+            $others = str_pad('LAIN-LAIN',19,' ',STR_PAD_LEFT).str_pad($lain_lain,20,' ',STR_PAD_LEFT);
             $printer -> text($others."\n");
         }
 
-        $total_akhir = $header->grand_total_item_price - $potongan_total + $header->others;
+        $total_akhir = $header->grand_total_item_price - $potongan_total -$header->total_item_discount + $header->others;
 
         if($total_akhir != $grand_total_item_price) {
             $total_akhir_2 = number_format(intval($total_akhir),0,",",".");
@@ -148,10 +169,20 @@ class PrintController extends Controller
         foreach($next_payments as $next_payment)
         {
             $printer -> selectPrintMode(Printer::MODE_EMPHASIZED);
+            $cabang_payment = '';
+            $branch_id = $next_payment->branch_id;
+            if(isset($branch_already_get[$branch_id])) {
+                $cabang_payment = $branch_already_get[$branch_id];
+            }
+            else {
+                $branch_get = Branch::find($branch_id);
+                $cabang_payment = $branch_already_get[$branch_id] = $branch_get->branch_name;
+            }
             $print_text ="\nPEMBAYARAN KE-".$no_payment;
             $printer -> text("\n".$print_text);
             $printer -> selectPrintMode(Printer::MODE_FONT_B);
-            $print_text = 'Waktu : '.HelperService::inaDate($next_payment->created_at,2)."\n";
+            $print_text = 'Cabang : '. $cabang_payment.' #'.$branch_id."\n";
+            $print_text .= 'Waktu : '.HelperService::inaDate($next_payment->created_at,2)."\n";
             $print_text .= 'Kasir : #'.$next_payment->cashier->id.' '.$next_payment->cashier->first_name."\n";
             $value = number_format(intval($next_payment->paid_value),0,",",".");
             $value = str_pad('NILAI BAYAR',19,' ',STR_PAD_LEFT).str_pad($value,20,' ',STR_PAD_LEFT);
