@@ -23,7 +23,6 @@ class PrintController extends Controller
         $branch_already_get = [];
         $invoice_id = str_replace('-','/', $invoice_id);
         $header = TransactionHeader::where('invoice_id', $invoice_id)->first();
-
         // dd($header->paymentStatus());
         $details = TransactionDetail::with(['itemInfo'])->where('header_id', $header->id)->get();
         $date_time = HelperService::inaDate($header->created_at,2);
