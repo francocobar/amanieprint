@@ -62,9 +62,16 @@ class PrintController extends Controller
         $cashier = 'Kasir : #'.$header->cashier->id.' '.$header->cashier->first_name;
         $printer -> text($cashier."\n");
 
-        $member = 'Member : ';
+        $member = '';
         if($header->member_id!=null) {
-            $member .= Member::where('member_id',$header->member_id)->first()->full_name.' '.$header->member_id;
+            if($header->antar_cabang) {
+                $member .= 'Customer : '.$header->customer_name.' ('.$header->customer_phone.') #'.$header->member_id;
+            }
+            else
+            {
+                $member .= 'Member : '.Member::where('member_id',$header->member_id)->first()->full_name.' #'.$header->member_id;
+            }
+
         }
         else {
             if($header->customer_name) {
